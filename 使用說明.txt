@@ -1,4 +1,4 @@
-﻿F5-TTS 繁中通用一鍵安裝器 v1.0.3
+﻿F5-TTS 繁中通用一鍵安裝器 v1.0.1
 =====================================
 
 【怎麼用】
@@ -52,7 +52,13 @@ config.json 裡有：
 - 若公開散布，請一併遵守 F5-TTS、模型與第三方套件各自的授權條款。
 
 
-【v1.0.3 修正】
+【v1.0.1 修正】
 - FFmpeg 改為安裝目錄內 Portable 7.1.1 Shared，不再升級系統 FFmpeg。
 - 依 CUDA 能力選擇相容的 PyTorch / TorchCodec 配對，不綁 RTX 型號。
 - 啟動 BAT 改用 ASCII 寫入，避免 Windows CMD BOM 亂碼/閃退。
+
+
+【v1.0.1 修正】
+- 修正 Windows Python 3.8+ 的 FFmpeg DLL 搜尋問題。
+- 自動建立 sitecustomize.py 並使用 os.add_dll_directory() 註冊 Portable FFmpeg。
+- TorchCodec 驗證時也會明確加入 FFmpeg DLL 目錄。

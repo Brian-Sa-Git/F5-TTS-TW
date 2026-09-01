@@ -360,6 +360,25 @@ $env:PATH = "$RuntimeFFmpegDir;$env:PATH"
 $site = (& $VenvPython -c "import site; print(site.getsitepackages()[0])").Trim()
 $TorchCodecDir = Join-Path $site "torchcodec"
 
+# Python 3.8+ on Windows changed dependent-DLL lookup behavior.
+# Create sitecustomize.py so every Python process in this venv explicitly registers
+# our Portable FFmpeg folder with os.add_dll_directory().
+$SiteCustomize = Join-Path $site "sitecustomize.py"
+$SiteCustomizeText = @"
+import os
+
+F5TTS_FFMPEG_DLL_HANDLE = None
+_f5tts_ffmpeg_bin = r"$RuntimeFFmpegDir"
+
+if os.name == "nt" and os.path.isdir(_f5tts_ffmpeg_bin):
+    try:
+        F5TTS_FFMPEG_DLL_HANDLE = os.add_dll_directory(_f5tts_ffmpeg_bin)
+    except (AttributeError, OSError):
+        pass
+"@
+Set-Content -Path $SiteCustomize -Value $SiteCustomizeText -Encoding UTF8
+Info "已建立 Python DLL 搜尋修正：sitecustomize.py"
+
 if (Test-Path $TorchCodecDir) {
     Copy-Item -Path (Join-Path $RuntimeFFmpegDir "*.dll") -Destination $TorchCodecDir -Force
     Info "已把 FFmpeg shared DLL 複製到 TorchCodec 目錄。"
@@ -367,7 +386,7 @@ if (Test-Path $TorchCodecDir) {
 
 $testOk = $true
 try {
-    & $VenvPython -c "import torch, torchcodec; print('Torch:', torch.__version__); print('TorchCodec:', torchcodec.__version__); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+    & $VenvPython -c "import os; _h=os.add_dll_directory(r'$RuntimeFFmpegDir') if os.name=='nt' else None; import torch, torchcodec; print('Torch:', torch.__version__); print('TorchCodec:', torchcodec.__version__); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
     if ($LASTEXITCODE -ne 0) { $testOk = $false }
 } catch {
     $testOk = $false
@@ -379,7 +398,7 @@ if (-not $testOk) {
     if (Test-Path $TorchCodecDir) {
         Copy-Item -Path (Join-Path $RuntimeFFmpegDir "*.dll") -Destination $TorchCodecDir -Force
     }
-    & $VenvPython -c "import torch, torchcodec; print('Torch:', torch.__version__); print('TorchCodec:', torchcodec.__version__)"
+    & $VenvPython -c "import os; _h=os.add_dll_directory(r'$RuntimeFFmpegDir') if os.name=='nt' else None; import torch, torchcodec; print('Torch:', torch.__version__); print('TorchCodec:', torchcodec.__version__)"
     if ($LASTEXITCODE -ne 0) {
         throw "TorchCodec 仍無法載入。請保留這個視窗的錯誤訊息。"
     }
