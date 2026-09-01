@@ -1,0 +1,39 @@
+{
+  "installer_version": "1.0.0",
+  "default_install_dir": "C:\\AI\\F5-TTS-Universal",
+  "f5_repo": "https://github.com/SWivid/F5-TTS.git",
+  "f5_ref": "1.1.22",
+  "custom_ui_url": "",
+  "python_winget_id": "Python.Python.3.11",
+  "git_winget_id": "Git.Git",
+  "ffmpeg_winget_id": "Gyan.FFmpeg.Shared",
+  "vcredist_winget_id": "Microsoft.VCRedist.2015+.x64",
+  "models": {
+    "f5_tts_v1": {
+      "repo_id": "SWivid/F5-TTS",
+      "files": [
+        "F5TTS_v1_Base/model_1250000.safetensors",
+        "F5TTS_v1_Base/vocab.txt"
+      ]
+    },
+    "vocos": {
+      "repo_id": "charactr/vocos-mel-24khz",
+      "files": [
+        "config.yaml",
+        "pytorch_model.bin"
+      ]
+    },
+    "e2_tts": {
+      "repo_id": "SWivid/E2-TTS",
+      "files": [
+        "E2TTS_Base/model_1200000.safetensors"
+      ]
+    },
+    "whisper": {
+      "repo_id": "openai/whisper-large-v3-turbo"
+    },
+    "qwen_voice_chat": {
+      "repo_id": "Qwen/Qwen2.5-3B-Instruct"
+    }
+  }
+}

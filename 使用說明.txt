@@ -1,0 +1,52 @@
+﻿F5-TTS 繁中通用一鍵安裝器 v1.0.0
+=====================================
+
+【怎麼用】
+1. 解壓縮整個資料夾。
+2. 雙擊「安裝F5-TTS.bat」。
+3. 選安裝位置。
+4. 安裝器會自動偵測 NVIDIA 顯示卡，不固定 RTX 型號。
+5. 選擇是否預先下載 E2-TTS、Whisper、Qwen 等模型。
+6. 完成後桌面會建立「F5-TTS 繁中版」與「F5-TTS 微調」捷徑。
+
+【目前包含的客製功能】
+- 繁體中文介面
+- 句尾停頓設定
+- 英文年份安全辨識
+- BCE / BC / CE / AD 大小寫辨識
+- 年份範圍多種橫線辨識
+- 一般英文 self-destruction / well-known 等複合字不會被年份規則誤改
+- 常用隨機種子收藏，可新增、套用、刪除，重開程式仍保留
+- F5-TTS / E2-TTS / Multi-Speech / Voice Chat / Finetune
+
+【不綁定顯示卡】
+安裝器不會寫死 RTX 3050、5060、5070 等型號。
+它會檢查 nvidia-smi 顯示的 Driver / CUDA runtime 能力：
+- 支援 CUDA 13.0 或以上：嘗試 PyTorch cu130
+- 支援 CUDA 12.6～12.x：嘗試 PyTorch cu126
+- 沒有 NVIDIA 或驅動太舊：先安裝 CPU 版
+
+之後換電腦，只要重新跑安裝器，就會重新判斷。
+
+【模型可一起攜帶】
+如果你之後想把已下載模型一起帶走：
+把 Hugging Face cache 放進：
+portable_models\huggingface\
+
+安裝器偵測到裡面有檔案後，會先合併到新電腦的模型資料夾，
+有的模型就不用重新下載。
+
+【自己的 GitHub】
+config.json 裡有：
+"custom_ui_url": ""
+
+現在留空時，安裝器使用 payload\infer_gradio.py。
+之後你把客製版 infer_gradio.py 放到自己的公開 GitHub，
+可以把 custom_ui_url 改成 Raw 檔案網址。
+之後安裝時就會直接從 GitHub 抓最新版，不需要重新做整包安裝器。
+
+【重要】
+- 安裝階段需要網路，除非你已經把所需程式/模型另外離線準備。
+- Windows 建議使用 Windows 10/11 64-bit。
+- NVIDIA GPU 加速仍需要電腦本身安裝相容的 NVIDIA Driver。
+- 若公開散布，請一併遵守 F5-TTS、模型與第三方套件各自的授權條款。

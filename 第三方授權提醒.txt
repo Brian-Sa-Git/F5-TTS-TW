@@ -1,0 +1,10 @@
+﻿第三方來源與授權提醒
+====================
+本安裝器會下載/安裝：
+- F5-TTS: https://github.com/SWivid/F5-TTS
+- PyTorch: https://pytorch.org/
+- TorchCodec: https://github.com/meta-pytorch/torchcodec
+- FFmpeg shared build (Gyan via winget)
+- Hugging Face 上的 F5-TTS / E2-TTS / Whisper / Qwen 模型（依使用者選擇）
+
+若要公開散布或商業使用，請自行確認上述各專案與模型當時的授權條款。
