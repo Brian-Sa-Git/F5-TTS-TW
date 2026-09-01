@@ -531,6 +531,16 @@ if (Test-Path $BundledUninstaller) {
     Warn "找不到安裝包內的解除安裝F5-TTS.bat，將略過建立解除安裝器。"
 }
 
+
+# 複製桌面捷徑圖示
+$BundledIcons = Join-Path $PackageRoot "icons"
+$InstalledIcons = Join-Path $InstallDir "icons"
+if (Test-Path $BundledIcons) {
+    New-Item -ItemType Directory -Force -Path $InstalledIcons | Out-Null
+    Copy-Item -Path (Join-Path $BundledIcons "*") -Destination $InstalledIcons -Force
+    Good "F5-TTS 桌面圖示已安裝"
+}
+
 # 建立桌面捷徑（失敗也不影響安裝）
 try {
     $Desktop = [Environment]::GetFolderPath("Desktop")
@@ -539,11 +549,13 @@ try {
     $shortcut = $ws.CreateShortcut((Join-Path $Desktop "F5-TTS 繁中版.lnk"))
     $shortcut.TargetPath = Join-Path $InstallDir "開啟F5-TTS.bat"
     $shortcut.WorkingDirectory = $InstallDir
+    $shortcut.IconLocation = (Join-Path $InstallDir "icons\F5-TTS.ico") + ",0"
     $shortcut.Save()
 
     $shortcut2 = $ws.CreateShortcut((Join-Path $Desktop "F5-TTS 微調.lnk"))
     $shortcut2.TargetPath = Join-Path $InstallDir "開啟F5-TTS微調.bat"
     $shortcut2.WorkingDirectory = $InstallDir
+    $shortcut2.IconLocation = (Join-Path $InstallDir "icons\F5-TTS-Finetune.ico") + ",0"
     $shortcut2.Save()
 
     Good "桌面捷徑已建立"

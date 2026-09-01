@@ -76,3 +76,11 @@ config.json 裡有：
 - Git
 - NVIDIA Driver
 - 其他不同安裝路徑的 F5-TTS
+
+
+【桌面圖示】
+安裝完成後：
+- F5-TTS 繁中版會使用 F5-TTS.ico
+- F5-TTS 微調會使用 F5-TTS-Finetune.ico
+
+圖示會保存在安裝目錄的 icons 資料夾中。
