@@ -128,6 +128,8 @@ function Get-NvidiaInfo {
         Driver = ""
         ReportedCuda = ""
         TorchIndex = "cpu"
+        TorchVersion = "2.8.0"
+        TorchCodecVersion = "0.7.0"
         Mode = "CPU"
     }
 
@@ -153,17 +155,29 @@ function Get-NvidiaInfo {
             $result.ReportedCuda = $m.Groups[1].Value
             $cuda = [version]$result.ReportedCuda
 
-            # 不綁 RTX 型號，只依 NVIDIA Driver 能支援的 CUDA runtime 選 PyTorch wheel。
+            # 不綁 RTX 型號；只依 Driver 可支援的 CUDA 上限選已知相容組合。
             if ($cuda -ge [version]"13.0") {
                 $result.TorchIndex = "cu130"
+                $result.TorchVersion = "2.10.0"
+                $result.TorchCodecVersion = "0.10.0"
+                $result.Mode = "NVIDIA CUDA"
+            }
+            elseif ($cuda -ge [version]"12.8") {
+                $result.TorchIndex = "cu128"
+                $result.TorchVersion = "2.9.1"
+                $result.TorchCodecVersion = "0.9.0"
                 $result.Mode = "NVIDIA CUDA"
             }
             elseif ($cuda -ge [version]"12.6") {
                 $result.TorchIndex = "cu126"
+                $result.TorchVersion = "2.8.0"
+                $result.TorchCodecVersion = "0.7.0"
                 $result.Mode = "NVIDIA CUDA"
             }
             else {
                 $result.TorchIndex = "cpu"
+                $result.TorchVersion = "2.8.0"
+                $result.TorchCodecVersion = "0.7.0"
                 $result.Mode = "CPU fallback"
             }
         }
@@ -206,6 +220,7 @@ if ($Gpu.Present) {
     Info "Driver：$($Gpu.Driver)"
     Info "nvidia-smi 顯示可支援 CUDA：$($Gpu.ReportedCuda)"
     Info "PyTorch 模式：$($Gpu.Mode) / $($Gpu.TorchIndex)"
+    Info "相容版本：PyTorch $($Gpu.TorchVersion) / TorchCodec $($Gpu.TorchCodecVersion)"
     if ($Gpu.TorchIndex -eq "cpu") {
         Warn "NVIDIA Driver 顯示的 CUDA 能力低於目前安裝器的 GPU wheel 門檻，將先使用 CPU 模式。之後可更新顯卡驅動再重裝 GPU 版。"
     }
@@ -214,7 +229,7 @@ if ($Gpu.Present) {
     Info "這不會綁死硬體；之後換 NVIDIA 電腦重新執行安裝器即可自動選 GPU 版。"
 }
 
-Section "3/9  準備 Python / Git / FFmpeg"
+Section "3/9  準備 Python / Git / Portable FFmpeg"
 
 $PythonExe = Find-Python311
 if (-not $PythonExe) {
@@ -236,20 +251,43 @@ if (-not $GitExe) {
 }
 Good "Git：$GitExe"
 
-$FFBin = Find-FFmpegSharedBin
-if (-not $FFBin) {
-    Winget-Install $Config.ffmpeg_winget_id
-    $FFBin = Find-FFmpegSharedBin
-}
-if (-not $FFBin) {
-    throw "找不到 FFmpeg Shared DLL。請確認 Gyan.FFmpeg.Shared 已成功安裝。"
-}
-Good "FFmpeg Shared：$FFBin"
+# 使用安裝目錄內的 Portable FFmpeg 7.1.1，不安裝、不更新 Windows 全域 FFmpeg。
+$FFmpegExe = Join-Path $RuntimeFFmpegDir "ffmpeg.exe"
+$FFmpegDll = Get-ChildItem -Path $RuntimeFFmpegDir -Filter "avcodec-*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
 
-# 複製一份 FFmpeg runtime 到 F5-TTS 目錄，啟動時不依賴全域 PATH。
-New-Item -ItemType Directory -Force -Path $RuntimeFFmpegDir | Out-Null
-Copy-Item -Path (Join-Path $FFBin "*") -Destination $RuntimeFFmpegDir -Force
-Good "已建立本機 FFmpeg runtime"
+if (-not (Test-Path $FFmpegExe) -or -not $FFmpegDll) {
+    Info "準備 Portable FFmpeg 7.1.1 Shared（不修改系統 FFmpeg）..."
+
+    $FFmpegUrl = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build-shared.zip"
+    $TempZip = Join-Path $env:TEMP "f5tts_ffmpeg_7.1.1_shared.zip"
+    $TempDir = Join-Path $env:TEMP "f5tts_ffmpeg_7.1.1_shared"
+
+    if (Test-Path $TempZip) { Remove-Item $TempZip -Force }
+    if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force }
+
+    Invoke-WebRequest -Uri $FFmpegUrl -OutFile $TempZip -UseBasicParsing
+    Expand-Archive -Path $TempZip -DestinationPath $TempDir -Force
+
+    $FoundFFmpeg = Get-ChildItem -Path $TempDir -Recurse -Filter "ffmpeg.exe" -ErrorAction Stop |
+        Where-Object { $_.Directory.Name -eq "bin" } |
+        Select-Object -First 1
+
+    if (-not $FoundFFmpeg) {
+        throw "Portable FFmpeg 解壓後找不到 ffmpeg.exe。"
+    }
+
+    $FFBin = $FoundFFmpeg.Directory.FullName
+    New-Item -ItemType Directory -Force -Path $RuntimeFFmpegDir | Out-Null
+    Copy-Item -Path (Join-Path $FFBin "*") -Destination $RuntimeFFmpegDir -Force
+
+    Remove-Item $TempZip -Force -ErrorAction SilentlyContinue
+    Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+if (-not (Test-Path $FFmpegExe)) {
+    throw "Portable FFmpeg 建立失敗。"
+}
+Good "Portable FFmpeg 7.1.1 Shared：$RuntimeFFmpegDir"
 
 Section "4/9  下載 F5-TTS 程式"
 
@@ -268,7 +306,7 @@ if (Test-Path (Join-Path $SourceDir ".git")) {
 }
 Good "F5-TTS 原始碼已準備完成（$($Config.f5_ref)）"
 
-Section "5/9  建立 Python 環境與自動選 PyTorch"
+Section "5/9  建立 Python 環境與相容 PyTorch / TorchCodec"
 
 if (-not (Test-Path (Join-Path $VenvDir "Scripts\python.exe"))) {
     & $PythonExe -m venv $VenvDir
@@ -279,17 +317,15 @@ $VenvPip = Join-Path $VenvDir "Scripts\pip.exe"
 & $VenvPython -m pip install --upgrade pip setuptools wheel
 
 $torchIndex = $Gpu.TorchIndex
-if ($torchIndex -eq "cu130") {
-    Info "安裝 NVIDIA CUDA 13.0 PyTorch wheel..."
-    & $VenvPython -m pip install torch torchaudio --index-url "https://download.pytorch.org/whl/cu130"
-}
-elseif ($torchIndex -eq "cu126") {
-    Info "安裝 NVIDIA CUDA 12.6 PyTorch wheel..."
-    & $VenvPython -m pip install torch torchaudio --index-url "https://download.pytorch.org/whl/cu126"
-}
-else {
-    Info "安裝 CPU PyTorch wheel..."
-    & $VenvPython -m pip install torch torchaudio --index-url "https://download.pytorch.org/whl/cpu"
+$torchVersion = $Gpu.TorchVersion
+$torchCodecVersion = $Gpu.TorchCodecVersion
+
+if ($torchIndex -eq "cpu") {
+    Info "安裝 PyTorch $torchVersion CPU..."
+    & $VenvPython -m pip install "torch==$torchVersion" "torchaudio==$torchVersion" --index-url "https://download.pytorch.org/whl/cpu"
+} else {
+    Info "安裝 PyTorch $torchVersion / $torchIndex..."
+    & $VenvPython -m pip install "torch==$torchVersion" "torchaudio==$torchVersion" --index-url "https://download.pytorch.org/whl/$torchIndex"
 }
 if ($LASTEXITCODE -ne 0) { throw "PyTorch 安裝失敗。" }
 
@@ -300,9 +336,26 @@ try {
 } finally {
     Pop-Location
 }
-Good "F5-TTS Python 環境完成"
 
-Section "6/9  修正 Windows TorchCodec / FFmpeg DLL"
+# F5-TTS 目前對 torch / torchcodec 沒有鎖定配對版本；
+# 安裝依賴後再次固定為相容組合，避免 pip 自動裝到不相容版本。
+if ($torchIndex -eq "cpu") {
+    & $VenvPython -m pip install --upgrade --force-reinstall "torch==$torchVersion" "torchaudio==$torchVersion" --index-url "https://download.pytorch.org/whl/cpu"
+} else {
+    & $VenvPython -m pip install --upgrade --force-reinstall "torch==$torchVersion" "torchaudio==$torchVersion" --index-url "https://download.pytorch.org/whl/$torchIndex"
+}
+if ($LASTEXITCODE -ne 0) { throw "固定 PyTorch 相容版本失敗。" }
+
+# Windows 的 TTS 音訊解碼不需要 TorchCodec CUDA 解碼 wheel；
+# 使用 PyPI 的相容 TorchCodec 版本即可，並沿用 Portable FFmpeg shared DLL。
+& $VenvPython -m pip install --upgrade --force-reinstall "torchcodec==$torchCodecVersion"
+if ($LASTEXITCODE -ne 0) { throw "TorchCodec $torchCodecVersion 安裝失敗。" }
+
+Good "F5-TTS Python 環境完成：PyTorch $torchVersion / TorchCodec $torchCodecVersion"
+
+Section "6/9  驗證 TorchCodec / Portable FFmpeg"
+
+$env:PATH = "$RuntimeFFmpegDir;$env:PATH"
 
 $site = (& $VenvPython -c "import site; print(site.getsitepackages()[0])").Trim()
 $TorchCodecDir = Join-Path $site "torchcodec"
@@ -422,7 +475,7 @@ cd /d "%~dp0F5-TTS-src"
 f5-tts_infer-gradio --inbrowser
 pause
 "@
-Set-Content -Path (Join-Path $InstallDir "開啟F5-TTS.bat") -Value $LaunchBat -Encoding UTF8
+[System.IO.File]::WriteAllText((Join-Path $InstallDir "開啟F5-TTS.bat"), $LaunchBat, [System.Text.Encoding]::ASCII)
 
 $TrainBat = @"
 @echo off
@@ -436,7 +489,7 @@ cd /d "%~dp0F5-TTS-src"
 f5-tts_finetune-gradio --inbrowser
 pause
 "@
-Set-Content -Path (Join-Path $InstallDir "開啟F5-TTS微調.bat") -Value $TrainBat -Encoding UTF8
+[System.IO.File]::WriteAllText((Join-Path $InstallDir "開啟F5-TTS微調.bat"), $TrainBat, [System.Text.Encoding]::ASCII)
 
 $CheckBat = @"
 @echo off
@@ -447,7 +500,7 @@ set "PATH=%~dp0runtime\ffmpeg\bin;%PATH%"
 ffmpeg -version
 pause
 "@
-Set-Content -Path (Join-Path $InstallDir "檢查F5-TTS環境.bat") -Value $CheckBat -Encoding UTF8
+[System.IO.File]::WriteAllText((Join-Path $InstallDir "檢查F5-TTS環境.bat"), $CheckBat, [System.Text.Encoding]::ASCII)
 
 # 建立桌面捷徑（失敗也不影響安裝）
 try {

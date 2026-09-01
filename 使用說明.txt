@@ -1,4 +1,4 @@
-﻿F5-TTS 繁中通用一鍵安裝器 v1.0.0
+﻿F5-TTS 繁中通用一鍵安裝器 v1.0.3
 =====================================
 
 【怎麼用】
@@ -50,3 +50,9 @@ config.json 裡有：
 - Windows 建議使用 Windows 10/11 64-bit。
 - NVIDIA GPU 加速仍需要電腦本身安裝相容的 NVIDIA Driver。
 - 若公開散布，請一併遵守 F5-TTS、模型與第三方套件各自的授權條款。
+
+
+【v1.0.3 修正】
+- FFmpeg 改為安裝目錄內 Portable 7.1.1 Shared，不再升級系統 FFmpeg。
+- 依 CUDA 能力選擇相容的 PyTorch / TorchCodec 配對，不綁 RTX 型號。
+- 啟動 BAT 改用 ASCII 寫入，避免 Windows CMD BOM 亂碼/閃退。
