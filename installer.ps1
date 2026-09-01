@@ -3,7 +3,22 @@
 
 $PackageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $PackageRoot "config.json"
-$Config = Get-Content -Raw -Encoding UTF8 $ConfigPath | ConvertFrom-Json
+
+# 優先從自己的 GitHub 取得最新設定。
+# 如果沒有網路、GitHub 暫時無法連線或設定檔格式錯誤，會自動退回安裝包內的 config.json。
+$RemoteConfigUrl = "https://raw.githubusercontent.com/Brian-Sa-Git/F5-TTS-TW/main/config.json"
+$Config = $null
+
+try {
+    Write-Host "[資訊] 正在取得 GitHub 最新安裝設定..." -ForegroundColor Gray
+    $RemoteConfigText = (Invoke-WebRequest -Uri $RemoteConfigUrl -UseBasicParsing -TimeoutSec 15).Content
+    $Config = $RemoteConfigText | ConvertFrom-Json
+    Write-Host "[完成] 已載入 GitHub 最新設定。" -ForegroundColor Green
+}
+catch {
+    Write-Host "[注意] 無法取得 GitHub 最新設定，改用安裝包內建設定。" -ForegroundColor Yellow
+    $Config = Get-Content -Raw -Encoding UTF8 $ConfigPath | ConvertFrom-Json
+}
 
 function Section([string]$Text) {
     Write-Host ""
