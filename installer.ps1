@@ -1,4 +1,8 @@
-﻿$ErrorActionPreference = "Stop"
+﻿param(
+    [switch]$UpdateOnly
+)
+
+$ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $PackageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -190,6 +194,118 @@ function Copy-DirectoryContents([string]$Source, [string]$Destination) {
     if (-not (Test-Path $Source)) { return }
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     Copy-Item -Path (Join-Path $Source "*") -Destination $Destination -Recurse -Force
+}
+
+
+# ============================================================
+# v1.0.2：單一入口的「更新模式」
+# 若啟動 BAT 偵測到既有安裝，會用 -UpdateOnly 進入這裡，
+# 不重裝 Python / Git / PyTorch / 模型，只更新本專案客製內容。
+# ============================================================
+if ($UpdateOnly) {
+    Section "F5-TTS v1.0.2  更新既有安裝"
+
+    $InstallDir = $Config.default_install_dir
+    $SourceDir = Join-Path $InstallDir "F5-TTS-src"
+    $CustomTarget = Join-Path $SourceDir "src\f5_tts\infer\infer_gradio.py"
+
+    if (-not (Test-Path $CustomTarget)) {
+        throw "找不到既有安裝：$CustomTarget"
+    }
+
+    Info "偵測到既有安裝：$InstallDir"
+    Info "更新模式不會重裝 Python、Git、PyTorch、模型或 NVIDIA 驅動。"
+
+    # 先備份目前介面；每次更新覆蓋同一份 update backup，避免累積大量檔案。
+    $UpdateBackup = "$CustomTarget.before_v1.0.2_update"
+    Copy-Item $CustomTarget $UpdateBackup -Force
+    Good "目前介面已備份"
+
+    # 客製 UI：先檢查 GitHub 是否已同步完整音訊工作台；
+    # 若沒有，使用 v1.0.2 安裝包內建 payload，確保版本一致。
+    $BundledUI = Join-Path $PackageRoot "payload\infer_gradio.py"
+    $UseBundledUI = $true
+
+    if ($Config.custom_ui_url -and -not [string]::IsNullOrWhiteSpace($Config.custom_ui_url)) {
+        $RemoteUITemp = Join-Path $env:TEMP ("F5-TTS-TW-update-" + [guid]::NewGuid().ToString("N") + ".py")
+        try {
+            Info "檢查 GitHub 最新繁中介面..."
+            Invoke-WebRequest -Uri $Config.custom_ui_url -OutFile $RemoteUITemp -UseBasicParsing
+            $RemoteUIContent = Get-Content -Raw -Encoding UTF8 $RemoteUITemp
+
+            if ($RemoteUIContent.Contains("# F5-TTS-TW-AUDIO-WORKBENCH: 1.0")) {
+                Copy-Item $RemoteUITemp $CustomTarget -Force
+                $UseBundledUI = $false
+                Good "已套用 GitHub 最新完整音訊工作台"
+            } else {
+                Warn "GitHub 尚未同步 v1.0.2 工作台，改用安裝包內建版本。"
+            }
+        } catch {
+            Warn "無法下載 GitHub 介面，改用安裝包內建版本。"
+        } finally {
+            Remove-Item $RemoteUITemp -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if ($UseBundledUI) {
+        if (-not (Test-Path $BundledUI)) {
+            throw "找不到安裝包內的 payload\infer_gradio.py"
+        }
+        Copy-Item $BundledUI $CustomTarget -Force
+        Good "完整音訊工作台已更新"
+    }
+
+    # 使用現有虛擬環境做 Python 語法檢查。
+    $VenvPython = Join-Path $InstallDir ".venv\Scripts\python.exe"
+    if (Test-Path $VenvPython) {
+        & $VenvPython -m py_compile $CustomTarget
+        if ($LASTEXITCODE -ne 0) {
+            Copy-Item $UpdateBackup $CustomTarget -Force
+            throw "新版介面語法檢查失敗，已自動還原原本版本。"
+        }
+        Good "Python 語法檢查通過"
+    } else {
+        Warn "找不到既有 .venv，略過 Python 語法檢查。"
+    }
+
+    # 同步桌面圖示。
+    $BundledIcons = Join-Path $PackageRoot "icons"
+    $InstalledIcons = Join-Path $InstallDir "icons"
+    if (Test-Path $BundledIcons) {
+        New-Item -ItemType Directory -Force -Path $InstalledIcons | Out-Null
+        Copy-Item -Path (Join-Path $BundledIcons "*") -Destination $InstalledIcons -Force
+        Good "桌面圖示檔已更新"
+    }
+
+    # 同步修正版解除安裝器。
+    $BundledUninstaller = Join-Path $PackageRoot "解除安裝F5-TTS.bat"
+    if (Test-Path $BundledUninstaller) {
+        Copy-Item $BundledUninstaller (Join-Path $InstallDir "解除安裝F5-TTS.bat") -Force
+        Good "解除安裝器已更新"
+    }
+
+    # 工作台只建立「輸出檔案」根目錄。
+    # 音訊 / 文字 / 合成會建立在每次上傳所產生的日期時間資料夾內。
+    $OutputRoot = Join-Path $InstallDir "輸出檔案"
+    New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
+
+    # 清理舊版曾建立在輸出根目錄的空白資料夾。
+    # 只有「完全空白」時才刪除，避免誤刪使用者既有素材。
+    foreach ($LegacyName in @("音訊", "文字", "合成")) {
+        $LegacyDir = Join-Path $OutputRoot $LegacyName
+        if (Test-Path $LegacyDir) {
+            $LegacyItems = @(Get-ChildItem -LiteralPath $LegacyDir -Force -ErrorAction SilentlyContinue)
+            if ($LegacyItems.Count -eq 0) {
+                Remove-Item -LiteralPath $LegacyDir -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Section "更新完成"
+    Good "F5-TTS 已更新到 v1.0.2 客製功能"
+    Write-Host "位置：$InstallDir" -ForegroundColor Green
+    Write-Host "請重新開啟桌面的「F5-TTS 繁中版」。" -ForegroundColor Green
+    exit 0
 }
 
 Section "1/9  選擇安裝位置"
@@ -414,14 +530,39 @@ if (-not (Test-Path $CustomBackup)) {
     Copy-Item $CustomTarget $CustomBackup -Force
 }
 
+$BundledUI = Join-Path $PackageRoot "payload\infer_gradio.py"
+$UseBundledUI = $true
+
 if ($Config.custom_ui_url -and -not [string]::IsNullOrWhiteSpace($Config.custom_ui_url)) {
-    Info "從 GitHub/網路下載客製 infer_gradio.py..."
-    Invoke-WebRequest -Uri $Config.custom_ui_url -OutFile $CustomTarget -UseBasicParsing
-} else {
-    $BundledUI = Join-Path $PackageRoot "payload\infer_gradio.py"
-    Copy-Item $BundledUI $CustomTarget -Force
+    $RemoteUITemp = Join-Path $env:TEMP ("F5-TTS-TW-infer_gradio-" + [guid]::NewGuid().ToString("N") + ".py")
+    try {
+        Info "檢查 GitHub 最新繁中介面..."
+        Invoke-WebRequest -Uri $Config.custom_ui_url -OutFile $RemoteUITemp -UseBasicParsing
+        $RemoteUIContent = Get-Content -Raw -Encoding UTF8 $RemoteUITemp
+
+        if ($RemoteUIContent.Contains("# F5-TTS-TW-AUDIO-WORKBENCH: 1.0")) {
+            Copy-Item $RemoteUITemp $CustomTarget -Force
+            $UseBundledUI = $false
+            Good "已套用 GitHub 最新完整音訊工作台"
+        } else {
+            Warn "GitHub 介面尚未更新到完整音訊工作台，改用安裝包內建版本。"
+        }
+    } catch {
+        Warn "GitHub 介面下載失敗，改用安裝包內建完整音訊工作台。"
+    } finally {
+        Remove-Item $RemoteUITemp -Force -ErrorAction SilentlyContinue
+    }
 }
-Good "繁中介面、句尾停頓、年份安全辨識、常用 Seed 收藏已套用"
+
+if ($UseBundledUI) {
+    if (-not (Test-Path $BundledUI)) {
+        throw "找不到安裝包內的 payload\infer_gradio.py"
+    }
+    Copy-Item $BundledUI $CustomTarget -Force
+    Good "已套用安裝包內建完整音訊工作台"
+}
+
+Good "繁中介面、完整音訊工作台、句尾停頓、年份安全辨識、常用 Seed 收藏已套用"
 
 # 若上游舊版 finetune_gradio.py 仍存在 show_api 參數，移除它以相容新版 Gradio。
 $FinetuneFile = Join-Path $SourceDir "src\f5_tts\train\finetune_gradio.py"
