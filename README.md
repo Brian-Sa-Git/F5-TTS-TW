@@ -1,382 +1,436 @@
 # F5-TTS-TW
 
-**F5-TTS 繁體中文客製化介面與一鍵安裝工具**
+F5-TTS 繁體中文通用一鍵安裝器，提供繁體中文介面、Windows 一鍵安裝／更新、完整音訊工作台、長音檔自動分段、Whisper 批次轉文字、段落素材庫與 F5-TTS 語音合成功能。
 
-本專案以 F5-TTS 為基礎，提供繁體中文介面、Windows 一鍵安裝器，以及針對英文年份、停頓與常用隨機種子等功能的客製化改善。
-
-> 本專案為第三方繁體中文客製版本，並非 F5-TTS 官方專案。
+目前正式版本：**v1.0.2**
 
 ---
 
-## 📥 下載最新版
+## 主要特色
 
-👉 **[前往 Releases 下載最新版](https://github.com/Brian-Sa-Git/F5-TTS-TW/releases/latest)**
+### 一鍵安裝／更新
 
-下載 Release 頁面中提供的：
-
-```text
-F5-TTS_繁中通用一鍵安裝器_vX.X.X.zip
-```
-
-解壓縮後，雙擊：
+解壓縮後只需要執行：
 
 ```text
-安裝F5-TTS.bat
+安裝或更新F5-TTS.bat
 ```
 
-即可開始安裝。
+程式會自動判斷：
+
+- 尚未安裝 `F5-TTS-Universal` → 執行完整安裝
+- 已經安裝 `F5-TTS-Universal` → 直接更新客製功能
+
+更新模式不會重新安裝 Python、Git、PyTorch、模型或 NVIDIA 驅動。
 
 ---
 
-## ✨ 主要功能
-
-### 繁體中文介面
-
-將 F5-TTS WebUI 主要操作介面改為繁體中文，降低使用門檻。
+## 繁體中文介面
 
 包含：
 
 - 基本 TTS
 - 多角色語音
-- Voice Chat
-- 進階設定
-- 模型選擇
-- 微調介面
-- 常用操作提示
+- 語音聊天
+- 完整音訊工作台
+- 常用隨機種子收藏
+- 英文年份／年代安全辨識
+- BCE / BC / CE / AD 大小寫辨識
+- 多種年份範圍符號辨識
+- 句尾停頓設定
+- 自訂模型選項
 
 ---
 
-### 句尾停頓設定
+# 完整音訊工作台
 
-新增可調整的句尾停頓功能。
+v1.0.2 新增完整音訊工作台，可直接處理長音檔。
 
-適合長篇旁白、教材、故事、說書等需要自然斷句的用途。
+流程：
+
+```text
+① 上傳原始音訊
+↓
+② 整個音檔全部自動分段
+↓
+③ 全部已裁切段落轉文字
+↓
+④ 段落素材庫
+↓
+⑤ 套用到基本 TTS
+```
+
+---
+
+## 長音檔全部自動分段
+
+不論原始音訊是：
+
+- 38 秒
+- 5 分鐘
+- 1 小時
+- 或更長
+
+都會從頭到尾全部處理，不只挑一個片段。
+
+提供：
+
+```text
+📦 全部自動分段（只裁切）
+📦 全部自動分段＋優化
+```
+
+分段原則：
+
+- 優先依自然停頓切分
+- 一般每段盡量控制在 5～12 秒
+- 單一句連續超過 12 秒時，會保底切分
+- 所有段落都會自動輸出
+
+---
+
+## 音訊優化
+
+「全部自動分段＋優化」預設包含：
+
+- 整理頭尾長靜音
+- 音量正規化
+- 過濾低頻隆隆聲
+- 轉為 Mono
+- 24 kHz
+- 16-bit WAV
+- 輕微淡入淡出，降低切點喀聲
+
+採用保守型處理，避免重度降噪破壞原始聲線特徵。
+
+---
+
+## Whisper 批次轉文字
+
+可將全部已裁切段落一次轉成文字。
+
+目前介面保留三個語言選項：
+
+```text
+自動辨識
+中文
+英文
+```
+
+音訊與文字會使用相同段落編號。
 
 例如：
 
 ```text
-第一句。
-第二句。
-第三句。
-```
-
-可以在句子之間加入固定停頓，避免每一句黏在一起。
-
----
-
-### 英文年份安全辨識
-
-針對英文年份與歷史年代進行文字前處理，例如：
-
-```text
-441 BCE
-496–406 BCE
-1945 CE
-2024 AD
-```
-
-支援：
-
-```text
-BCE / bce / Bce
-BC / bc
-CE / ce
-AD / ad
-```
-
-大小寫皆可自動辨識。
-
-年份範圍也支援多種橫線：
-
-```text
-496-406 BCE
-496–406 BCE
-496—406 BCE
-496−406 BCE
-```
-
-並避免誤處理一般英文複合字，例如：
-
-```text
-self-destruction
-well-known
-long-term
+林薇英文聲音英文_001_優化.wav
+林薇英文聲音英文_001.txt
 ```
 
 ---
 
-### 常用隨機種子收藏
+# 段落素材庫
 
-如果某次生成的聲音特別自然，可以把 Seed 收藏起來。
+工作台會顯示所有已產生的音訊與文字素材。
 
-支援：
+可以：
 
-- 新增常用 Seed
-- 自訂備註名稱
-- 快速套用
-- 刪除收藏
-- 關閉程式後仍保留
+- 預覽任一音訊
+- 查看任一文字
+- 自由選擇音訊
+- 自由選擇文字
+- 音訊與文字可交叉配對
+- 一鍵套用到「基本 TTS」
 
 例如：
 
 ```text
-12345 ｜ 自然美式
-54321 ｜ 旁白穩定
-777   ｜ 情緒自然
+音訊：003
+文字：003
+```
+
+也可以自行選擇：
+
+```text
+音訊：003
+文字：007
 ```
 
 ---
 
-## 🤖 支援功能
+# 輸出資料夾
 
-目前安裝器可搭配：
+所有工作台輸出都會自動儲存，不需要另外按下載才會保留。
 
-- F5-TTS v1
-- E2-TTS
-- Whisper
-- Multi-Speech
-- Voice Chat
-- F5-TTS Finetune / 微調
+預設位置：
 
-部分模型可於安裝時選擇是否預先下載。
+```text
+C:\AI\F5-TTS-Universal\輸出檔案
+```
+
+每次上傳新的原始音訊，都會建立新的日期時間資料夾。
+
+例如：
+
+```text
+輸出檔案\
+└─ 2026-09-02_00-22-09_林薇英文聲音英文\
+   ├─ 音訊\
+   │  ├─ 林薇英文聲音英文_001_優化.wav
+   │  ├─ 林薇英文聲音英文_002_優化.wav
+   │  └─ 林薇英文聲音英文_003_優化.wav
+   │
+   ├─ 文字\
+   │  ├─ 林薇英文聲音英文_001.txt
+   │  ├─ 林薇英文聲音英文_002.txt
+   │  └─ 林薇英文聲音英文_003.txt
+   │
+   └─ 合成\
+      ├─ 林薇英文聲音英文_001_合成.wav
+      └─ 林薇英文聲音英文_002_合成.wav
+```
+
+音訊、文字、合成分開存放。
 
 ---
 
-## 🖥️ GPU 自動偵測
+# Basic TTS
 
-安裝器**不綁定特定 RTX 型號**。
+Basic TTS 的參考來源有兩種：
 
-不論目前使用：
+### 方式 1：從音訊工作台套用
 
-```text
-RTX 3050
-RTX 4060
-RTX 5060
-RTX 5070
-或其他 NVIDIA GPU
-```
+在段落素材庫選擇：
 
-安裝時都會重新偵測電腦環境。
+- 參考音訊
+- 參考文字
 
-安裝器會檢查：
+再一鍵套用到 Basic TTS。
 
-- NVIDIA GPU
-- NVIDIA Driver
-- CUDA 相容能力
-- PyTorch 安裝模式
+### 方式 2：自行選擇
 
-如果沒有可用的 NVIDIA GPU，則可退回 CPU 模式。
+也可以完全不使用工作台，直接在 Basic TTS：
 
-> GPU 加速仍需要電腦本身安裝相容的 NVIDIA 顯示卡驅動程式。
+- 自行上傳參考音訊
+- 自行輸入參考文字
+
+自行選擇的內容會直接取代先前由工作台套用的內容。
 
 ---
 
-## 🌐 GitHub 自動取得最新設定
+# 合成音訊自動儲存
 
-安裝器啟動時會優先取得本專案最新：
+Basic TTS 合成完成後：
 
-```text
-config.json
-```
+- 頁面可直接下載 WAV
+- WAV 會自動儲存到對應時間資料夾的 `合成` 子資料夾
+- 可直接按「開啟合成資料夾」
 
-並依照設定下載最新繁中客製介面：
+若參考音訊來自段落素材庫，合成結果會回到原本同一個時間資料夾。
 
-```text
-payload/infer_gradio.py
-```
-
-目前客製介面來源：
-
-```text
-https://raw.githubusercontent.com/Brian-Sa-Git/F5-TTS-TW/main/payload/infer_gradio.py
-```
-
-如果暫時無法連線 GitHub，安裝器會改用安裝包內建設定。
+只有自行上傳新的外部參考音訊時，才會建立新的時間資料夾。
 
 ---
 
-## 📦 模型可選擇一起攜帶
+# GPU / PyTorch 相容處理
 
-如果已經下載模型，也可以放入：
+安裝器會偵測 NVIDIA GPU 與目前驅動環境，再選擇相容的 PyTorch / TorchCodec 組合。
+
+目前安裝器包含的版本判斷：
 
 ```text
-portable_models/
+CUDA >= 13.0 → cu130
+CUDA >= 12.8 → cu128
+CUDA >= 12.6 → cu126
+其他情況 → CPU fallback
 ```
 
-安裝器會在安裝時嘗試合併已攜帶的 Hugging Face 模型快取。
-
-這樣換電腦時，可以減少重新下載大型模型。
+安裝器不綁定特定 RTX 型號。
 
 ---
 
-## 🚀 安裝方式
+# Portable FFmpeg
 
-### 1. 下載安裝包
-
-前往：
-
-👉 **[Releases](https://github.com/Brian-Sa-Git/F5-TTS-TW/releases/latest)**
-
-下載最新：
-
-```text
-F5-TTS_繁中通用一鍵安裝器_vX.X.X.zip
-```
-
-### 2. 解壓縮
-
-請先完整解壓縮 ZIP。
-
-不要直接在壓縮檔內執行 BAT。
-
-### 3. 執行安裝
-
-雙擊：
-
-```text
-安裝F5-TTS.bat
-```
-
-### 4. 選擇安裝位置
+本專案使用獨立 Portable FFmpeg。
 
 預設安裝位置：
 
 ```text
-C:\AI\F5-TTS-Universal
+C:\AI\F5-TTS-Universal\runtime\ffmpeg
 ```
 
-也可以自行指定其他位置。
+不會修改 Windows 全域 FFmpeg。
 
-### 5. 選擇模型
+另外包含 Windows TorchCodec DLL 搜尋修正，以提高 TorchCodec / FFmpeg 載入相容性。
 
-安裝過程中可依需要選擇是否下載：
+---
 
-```text
-F5-TTS v1
-E2-TTS
-Whisper
-Qwen Voice Chat
-```
+# 模型
 
-### 6. 安裝完成
+安裝流程可下載：
 
-完成後會建立：
+- F5-TTS v1
+- Vocos
+- Whisper large-v3-turbo
+- E2-TTS（依安裝選項）
+- Voice Chat 相關模型（依安裝選項）
 
-```text
-開啟F5-TTS.bat
-開啟F5-TTS微調.bat
-檢查F5-TTS環境.bat
-```
+模型檔案會保存在 F5-TTS-Universal 安裝目錄中。
 
-並嘗試建立桌面捷徑：
+---
+
+# 桌面捷徑
+
+安裝完成後會建立：
 
 ```text
 F5-TTS 繁中版
 F5-TTS 微調
 ```
 
----
-
-## 🔧 安裝器會自動處理
-
-安裝器會依環境處理：
-
-- Python 3.11
-- Git
-- F5-TTS
-- PyTorch
-- TorchCodec
-- FFmpeg Shared
-- Microsoft VC++ Runtime（必要時）
-- Hugging Face 模型
-- F5-TTS 繁中客製介面
-- Finetune Gradio 相容修正
-- TorchCodec / FFmpeg DLL 相容處理
+並使用專用桌面圖示。
 
 ---
 
-## 📁 Repository 結構
+# 解除安裝
+
+安裝目錄內提供：
 
 ```text
-F5-TTS-TW/
+解除安裝F5-TTS.bat
+```
+
+解除安裝器會移除：
+
+```text
+C:\AI\F5-TTS-Universal
+```
+
+以及指向該安裝的桌面捷徑。
+
+不會移除：
+
+```text
+C:\AI\F5-TTS
+Python
+Git
+NVIDIA Driver
+```
+
+使用解除安裝器前，請先完全關閉 F5-TTS 與相關命令視窗。
+
+---
+
+# 安裝位置
+
+預設：
+
+```text
+C:\AI\F5-TTS-Universal
+```
+
+主要結構：
+
+```text
+F5-TTS-Universal\
+├─ .venv\
+├─ F5-TTS-src\
+├─ icons\
+├─ models\
+├─ runtime\
+├─ 輸出檔案\
+├─ 開啟F5-TTS.bat
+├─ 開啟F5-TTS微調.bat
+├─ 檢查F5-TTS環境.bat
+└─ 解除安裝F5-TTS.bat
+```
+
+---
+
+# GitHub 原始檔結構
+
+```text
+F5-TTS-TW\
+├─ icons\
+│  ├─ F5-TTS.ico
+│  └─ F5-TTS-Finetune.ico
+│
+├─ payload\
+│  └─ infer_gradio.py
+│
+├─ portable_models\
 ├─ README.md
 ├─ config.json
 ├─ installer.ps1
-├─ 安裝F5-TTS.bat
 ├─ 使用說明.txt
+├─ 安裝或更新F5-TTS.bat
 ├─ 第三方授權提醒.txt
-│
-├─ payload/
-│  └─ infer_gradio.py
-│
-└─ portable_models/
-   └─ README_模型攜帶方式.txt
+└─ 解除安裝F5-TTS.bat
 ```
 
----
-
-## 🔄 更新方式
-
-客製介面更新時，主要更新：
+v1.0.2 已淘汰舊的：
 
 ```text
-payload/infer_gradio.py
+安裝F5-TTS.bat
+更新完整音訊工作台.bat
 ```
 
-安裝器設定則位於：
+統一改為：
 
 ```text
-config.json
+安裝或更新F5-TTS.bat
 ```
 
-新版正式發佈時，請建立新的 GitHub Release，例如：
+---
+
+# 下載
+
+請到 GitHub Releases 下載最新版：
+
+https://github.com/Brian-Sa-Git/F5-TTS-TW/releases/latest
+
+Release 中請下載自行提供的 F5-TTS 安裝 ZIP。
+
+GitHub 自動產生的：
 
 ```text
-v1.0.2
-v1.1.0
-v2.0.0
+Source code (zip)
+Source code (tar.gz)
 ```
 
----
-
-## ⚠️ 注意事項
-
-- 建議使用 Windows 10 / Windows 11 64-bit。
-- 線上安裝模式需要網路連線。
-- NVIDIA GPU 加速需要正常的 NVIDIA Driver。
-- 不同 GPU、Driver、PyTorch 與 TorchCodec 版本可能存在相容性差異。
-- 第一次執行模型時，部分模型可能需要額外下載。
-- 大型模型不建議直接放入 GitHub Repository。
-- 若要公開散布或商業使用，請確認 F5-TTS、模型及其他第三方套件各自的授權條款。
+是原始碼封裝，不是 Windows 一鍵安裝包。
 
 ---
 
-## 🔗 上游專案
+# v1.0.2 更新內容
 
-F5-TTS 官方專案：
-
-https://github.com/SWivid/F5-TTS
-
-本專案主要提供繁體中文客製介面與 Windows 安裝流程。
+- 新增完整音訊工作台
+- 新增長音檔全部自動分段
+- 新增全部自動分段＋音訊優化
+- 新增 Whisper 全部分段批次轉文字
+- 新增段落素材庫
+- 新增音訊／文字自由配對
+- 新增一鍵套用到 Basic TTS
+- 新增音訊／文字／合成分類資料夾
+- 新增依日期時間建立每次處理工作資料夾
+- 新增簡潔原始錄音名稱與段落編號
+- 新增合成完成自動儲存 WAV
+- 安裝與更新合併為單一入口
+- 修正解除安裝功能
+- 修正 Gradio 相容性
+- 修正 TorchCodec / Portable FFmpeg Windows DLL 載入
+- 修正合成檔案回存錯誤資料夾
+- 修正輸出根目錄產生空白音訊／文字資料夾
+- 修正完整音訊工作台啟動相容問題
 
 ---
 
-## 📄 授權與第三方套件
+# 第三方專案與授權
 
-本 Repository 中的客製程式、安裝腳本，以及第三方專案與模型可能具有不同授權條款。
+本專案基於 F5-TTS 及其相關開源套件進行 Windows 安裝流程、繁體中文介面與工作流程整合。
 
-使用前請分別確認：
+請同時遵守 F5-TTS、PyTorch、FFmpeg、Whisper、Transformers、Gradio、TorchCodec 及其他第三方套件各自的授權條款。
 
-- F5-TTS
-- PyTorch
-- TorchCodec
-- FFmpeg
-- Hugging Face 模型
-- Whisper
-- Qwen
-- 其他相關套件
-
-詳細提醒可參考：
+詳細提醒請參考：
 
 ```text
 第三方授權提醒.txt
