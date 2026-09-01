@@ -3,7 +3,7 @@
   "default_install_dir": "C:\\AI\\F5-TTS-Universal",
   "f5_repo": "https://github.com/SWivid/F5-TTS.git",
   "f5_ref": "1.1.22",
-  "custom_ui_url": "",
+  "custom_ui_url": "https://raw.githubusercontent.com/Brian-Sa-Git/F5-TTS-TW/main/payload/infer_gradio.py",
   "python_winget_id": "Python.Python.3.11",
   "git_winget_id": "Git.Git",
   "ffmpeg_winget_id": "Gyan.FFmpeg.Shared",
