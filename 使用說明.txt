@@ -62,3 +62,17 @@ config.json 裡有：
 - 修正 Windows Python 3.8+ 的 FFmpeg DLL 搜尋問題。
 - 自動建立 sitecustomize.py 並使用 os.add_dll_directory() 註冊 Portable FFmpeg。
 - TorchCodec 驗證時也會明確加入 FFmpeg DLL 目錄。
+
+
+【解除安裝】
+安裝完成後，安裝目錄內會有：
+解除安裝F5-TTS.bat
+
+雙擊後按 Y 確認，即會移除本安裝器建立的 F5-TTS-Universal 安裝資料夾，
+並清除指向這個安裝位置的桌面捷徑。
+
+不會移除：
+- Python
+- Git
+- NVIDIA Driver
+- 其他不同安裝路徑的 F5-TTS

@@ -521,6 +521,16 @@ pause
 "@
 [System.IO.File]::WriteAllText((Join-Path $InstallDir "檢查F5-TTS環境.bat"), $CheckBat, [System.Text.Encoding]::ASCII)
 
+
+# 複製解除安裝器到安裝目錄。
+$BundledUninstaller = Join-Path $PackageRoot "解除安裝F5-TTS.bat"
+if (Test-Path $BundledUninstaller) {
+    Copy-Item $BundledUninstaller (Join-Path $InstallDir "解除安裝F5-TTS.bat") -Force
+    Good "解除安裝F5-TTS.bat 已建立"
+} else {
+    Warn "找不到安裝包內的解除安裝F5-TTS.bat，將略過建立解除安裝器。"
+}
+
 # 建立桌面捷徑（失敗也不影響安裝）
 try {
     $Desktop = [Environment]::GetFolderPath("Desktop")
@@ -547,6 +557,7 @@ Write-Host "安裝完成！" -ForegroundColor Green
 Write-Host "位置：$InstallDir" -ForegroundColor Green
 Write-Host "啟動：$(Join-Path $InstallDir '開啟F5-TTS.bat')" -ForegroundColor Green
 Write-Host "微調：$(Join-Path $InstallDir '開啟F5-TTS微調.bat')" -ForegroundColor Green
+Write-Host "解除安裝：$(Join-Path $InstallDir '解除安裝F5-TTS.bat')" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "這個安裝器沒有綁定 RTX 型號。換電腦時重新執行，它會重新偵測硬體。" -ForegroundColor White
