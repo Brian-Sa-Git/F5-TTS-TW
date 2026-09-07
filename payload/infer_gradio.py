@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 from collections import OrderedDict
 from datetime import datetime
 from functools import lru_cache
@@ -131,6 +132,85 @@ def load_text_from_file(file):
     else:
         text = ""
     return gr.update(value=text)
+
+
+# ============================================================
+# 中英混合朗讀優化
+# F5-TTS v1 Base 本身支援中文 + 英文。
+# 這裡主要處理中英文黏在一起、全形 ASCII、常見縮寫與過度分句問題。
+# ============================================================
+
+_ZH_EN_SPELLOUT = {
+    "AI", "API", "CPU", "GPU", "USB", "URL", "HTML", "PDF",
+    "TTS", "GPT", "BCE", "BC", "CE", "AD", "SSD", "HDD", "RAM",
+    "ROM", "RTX", "CUDA", "DLL", "WAV", "MP3",
+}
+
+
+def _has_chinese(text):
+    return bool(re.search(r"[\u3100-\u9fff]", text or ""))
+
+
+def _has_english(text):
+    return bool(re.search(r"[A-Za-z]", text or ""))
+
+
+def _is_mixed_zh_en(text):
+    return _has_chinese(text) and _has_english(text)
+
+
+def _normalize_uppercase_english_token(match):
+    token = match.group(0)
+    upper = token.upper()
+
+    # 常見縮寫用逐字母方式，避免整串大寫被吞掉或念錯。
+    if upper in _ZH_EN_SPELLOUT:
+        chars = []
+        for ch in upper:
+            if ch.isalpha():
+                chars.append(ch)
+            elif ch.isdigit():
+                chars.append(ch)
+        return " ".join(chars)
+
+    # 一般全大寫英文單字（例如 LIVE / SCENARIOS）
+    # 若含母音且長度 >= 4，改為小寫，讓模型當一般英文單字讀。
+    if token.isupper() and len(token) >= 4 and re.search(r"[AEIOUY]", token):
+        return token.lower()
+
+    return token
+
+
+def normalize_mixed_zh_en_text(text):
+    """
+    對中英混合文字做保守前處理：
+    - 全形 ASCII -> 半形
+    - 中英文交界自動加空格
+    - 常見縮寫拆成字母
+    - 一般全大寫英文單字改小寫
+    - 保留中文標點與原本句意
+    """
+    if not text:
+        return text
+
+    text = unicodedata.normalize("NFKC", text)
+
+    # 統一不利於文字前端的特殊空白。
+    text = text.replace("\u00a0", " ").replace("\u3000", " ")
+
+    # 中 -> 英 / 英 -> 中 自動加入空格。
+    text = re.sub(r"(?<=[\u3100-\u9fff])(?=[A-Za-z0-9])", " ", text)
+    text = re.sub(r"(?<=[A-Za-z0-9])(?=[\u3100-\u9fff])", " ", text)
+
+    # 處理英文全大寫 token。
+    text = re.sub(r"\b[A-Z][A-Z0-9]{1,11}\b", _normalize_uppercase_english_token, text)
+
+    # 英文單字前後的多餘空白整理，但不破壞換行。
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+
+    return text.strip()
+
 
 
 def split_text_for_sentence_pause(text):
@@ -367,6 +447,9 @@ def infer(
     cross_fade_duration=0.15,
     sentence_pause=0.0,
     normalize_english_years=True,
+    mixed_zh_en_mode=True,
+    chinese_pace_mode=True,
+    chinese_speed_ratio=0.85,
     nfe_step=32,
     speed=1,
     show_info=gr.Info,
@@ -392,6 +475,33 @@ def infer(
             show_info("已自動將英文年份／年代轉成較自然的朗讀格式。")
         gen_text = normalized_gen_text
 
+    mixed_detected = False
+    if mixed_zh_en_mode and _is_mixed_zh_en(gen_text):
+        mixed_detected = True
+        normalized_mixed_text = normalize_mixed_zh_en_text(gen_text)
+        if normalized_mixed_text != gen_text:
+            show_info("已套用中英混合朗讀優化：整理中英文交界、縮寫與英文大小寫。")
+        gen_text = normalized_mixed_text
+
+    # 中文語速優化：
+    # F5-TTS 的語速會受參考音訊節奏影響；中文若過快時，
+    # 額外使用中文倍率放慢，不改動純英文生成。
+    effective_speed = float(speed)
+    if chinese_pace_mode and _has_chinese(gen_text):
+        try:
+            ratio = float(chinese_speed_ratio)
+        except (TypeError, ValueError):
+            ratio = 0.85
+
+        ratio = max(0.60, min(1.00, ratio))
+        effective_speed = max(0.30, min(2.00, effective_speed * ratio))
+
+        if abs(effective_speed - float(speed)) > 1e-6:
+            show_info(
+                f"已套用中文語速優化：畫面語速 {float(speed):.2f} × "
+                f"中文倍率 {ratio:.2f} = 實際語速 {effective_speed:.2f}。"
+            )
+
     ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_orig, ref_text, show_info=show_info)
 
     if model == DEFAULT_TTS_MODEL:
@@ -411,7 +521,9 @@ def infer(
             pre_custom_path = model[1]
         ema_model = custom_ema_model
 
-    if sentence_pause > 0:
+    # 中英混合時優先讓 F5-TTS 官方 chunk inference 整體處理，
+    # 避免逐句重啟生成造成中文不連貫，並降低英文片段被吞掉的機率。
+    if sentence_pause > 0 and not mixed_detected:
         sentence_parts = split_text_for_sentence_pause(gen_text)
         generated_waves = []
         generated_specs = []
@@ -428,7 +540,7 @@ def infer(
                 vocoder,
                 cross_fade_duration=cross_fade_duration,
                 nfe_step=nfe_step,
-                speed=speed,
+                speed=effective_speed,
                 show_info=show_info,
                 progress=None,
             )
@@ -455,6 +567,12 @@ def infer(
             np.concatenate(generated_specs, axis=1) if generated_specs else np.zeros((100, 1), dtype=np.float32)
         )
     else:
+        if mixed_detected and sentence_pause > 0:
+            show_info(
+                "偵測到中英混合文字：改用連續生成模式，以提升中文流暢度與英文完整度；"
+                "句尾停頓改由標點自然控制。"
+            )
+
         final_wave, final_sample_rate, combined_spectrogram = infer_process(
             ref_audio,
             ref_text,
@@ -463,7 +581,7 @@ def infer(
             vocoder,
             cross_fade_duration=cross_fade_duration,
             nfe_step=nfe_step,
-            speed=speed,
+            speed=effective_speed,
             show_info=show_info,
             progress=gr.Progress(),
         )
@@ -2627,7 +2745,8 @@ with gr.Blocks() as app_tts:
         "**參考來源有兩種：**  \n"
         "① 從「音訊工作台」挑選段落後一鍵套用。  \n"
         "② 直接在本頁自行上傳參考音訊、輸入參考文字。  \n"
-        "本頁自行選擇的內容會直接取代先前從工作台套用的內容。"
+        "本頁自行選擇的內容會直接取代先前從工作台套用的內容。  \n\n"
+        "💡 **中文＋英文一起朗讀：**進階設定中的「中英混合朗讀優化」建議保持開啟。"
     )
     ref_audio_input = gr.Audio(
         label="參考音訊（工作台套用／自行上傳皆可）",
@@ -2692,12 +2811,25 @@ with gr.Blocks() as app_tts:
                 use_favorite_seed_btn = gr.Button("✓ 使用選取種子", variant="primary")
                 delete_favorite_seed_btn = gr.Button("－ 刪除選取種子", variant="stop")
         speed_slider = gr.Slider(
-            label="語速",
+            label="整體語速",
             minimum=0.3,
             maximum=2.0,
             value=1.0,
-            step=0.1,
-            info="調整生成語音的速度。",
+            step=0.05,
+            info="1.0 為原始速度；數值越小越慢。中文覺得太快時，可先保持 1.0，讓下方中文語速優化自動處理。",
+        )
+        chinese_pace_mode = gr.Checkbox(
+            label="中文語速自動優化",
+            value=True,
+            info="偵測到中文時自動放慢，降低每個字黏在一起的感覺；純英文不受影響。",
+        )
+        chinese_speed_ratio = gr.Slider(
+            label="中文語速倍率",
+            minimum=0.60,
+            maximum=1.00,
+            value=0.85,
+            step=0.05,
+            info="建議 0.80～0.90。0.85 代表中文會以整體語速的 85% 生成；數值越小越慢。",
         )
         nfe_slider = gr.Slider(
             label="NFE 採樣步數",
@@ -2727,6 +2859,16 @@ with gr.Blocks() as app_tts:
             label="英文年份／年代自動轉讀",
             value=True,
             info="會自動辨識各種 -／–／—／− 等年份範圍符號與年代大小寫。例如 496–406 bce 會轉成 four hundred ninety six to four hundred six B C E。",
+        )
+        mixed_zh_en_mode = gr.Checkbox(
+            label="中英混合朗讀優化",
+            value=True,
+            info="中文＋英文一起朗讀時建議開啟。會整理中英文交界與常見英文縮寫，並改用較連續的生成方式，減少英文被跳過與中文斷裂。",
+        )
+        gr.Markdown(
+            "💡 **中文太快／字黏在一起：**先保持「整體語速 1.0」，"
+            "勾選「中文語速自動優化」，中文倍率建議先用 **0.85**；"
+            "仍太快可降到 **0.80 或 0.75**。"
         )
 
     def collapse_accordion():
@@ -2765,6 +2907,9 @@ with gr.Blocks() as app_tts:
         cross_fade_duration_slider,
         sentence_pause_slider,
         normalize_english_years,
+        mixed_zh_en_mode,
+        chinese_pace_mode,
+        chinese_speed_ratio,
         nfe_slider,
         speed_slider,
     ):
@@ -2781,6 +2926,9 @@ with gr.Blocks() as app_tts:
             cross_fade_duration=cross_fade_duration_slider,
             sentence_pause=sentence_pause_slider,
             normalize_english_years=normalize_english_years,
+            mixed_zh_en_mode=mixed_zh_en_mode,
+            chinese_pace_mode=chinese_pace_mode,
+            chinese_speed_ratio=chinese_speed_ratio,
             nfe_step=nfe_slider,
             speed=speed_slider,
         )
@@ -2867,6 +3015,9 @@ with gr.Blocks() as app_tts:
             cross_fade_duration_slider,
             sentence_pause_slider,
             normalize_english_years,
+            mixed_zh_en_mode,
+            chinese_pace_mode,
+            chinese_speed_ratio,
             nfe_slider,
             speed_slider,
         ],
