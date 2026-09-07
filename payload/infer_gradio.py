@@ -213,6 +213,109 @@ def normalize_mixed_zh_en_text(text):
 
 
 
+# ============================================================
+# 中英雙參考音訊
+# 中文使用主要參考音訊；英文使用獨立英文參考音訊。
+# ============================================================
+
+def _dual_ref_char_language(ch):
+    if re.match(r"[\u3100-\u9fff]", ch):
+        return "zh"
+    if re.match(r"[A-Za-z]", ch):
+        return "en"
+    return "neutral"
+
+
+def split_mixed_zh_en_by_language(text):
+    """
+    將中英混合文字依主要語系切成片段。
+    數字、空白、標點會盡量跟著前一個語系，避免產生純標點片段。
+    """
+    text = text or ""
+    if not text:
+        return []
+
+    segments = []
+    current_lang = None
+    current_chars = []
+    pending_neutral = []
+
+    def flush():
+        nonlocal current_lang, current_chars, pending_neutral
+        if current_chars or pending_neutral:
+            chunk = "".join(current_chars + pending_neutral)
+            if chunk.strip():
+                segments.append((current_lang or "zh", chunk))
+        current_lang = None
+        current_chars = []
+        pending_neutral = []
+
+    for ch in text:
+        lang = _dual_ref_char_language(ch)
+
+        if lang == "neutral":
+            if current_lang is None:
+                pending_neutral.append(ch)
+            else:
+                current_chars.append(ch)
+            continue
+
+        if current_lang is None:
+            current_lang = lang
+            current_chars.extend(pending_neutral)
+            pending_neutral = []
+            current_chars.append(ch)
+            continue
+
+        if lang == current_lang:
+            current_chars.append(ch)
+            continue
+
+        # 語言切換：把目前片段先收起來。
+        flush()
+        current_lang = lang
+        current_chars.append(ch)
+
+    flush()
+
+    # 過短片段若只是單一字母，仍保留英文，避免縮寫被吞掉。
+    return [(lang, chunk) for lang, chunk in segments if chunk.strip()]
+
+
+def _dual_ref_crossfade_concat(left, right, sample_rate, seconds=0.03):
+    """把兩段語音用極短 crossfade 接起來，降低語言切換點的喀聲。"""
+    if left is None or len(left) == 0:
+        return right
+    if right is None or len(right) == 0:
+        return left
+
+    left = np.asarray(left)
+    right = np.asarray(right)
+
+    fade_samples = int(max(0.0, float(seconds)) * int(sample_rate))
+    fade_samples = min(fade_samples, len(left), len(right))
+
+    if fade_samples <= 0:
+        return np.concatenate([left, right])
+
+    fade_out = np.linspace(1.0, 0.0, fade_samples, endpoint=False, dtype=np.float32)
+    fade_in = 1.0 - fade_out
+
+    overlap = (
+        left[-fade_samples:].astype(np.float32) * fade_out
+        + right[:fade_samples].astype(np.float32) * fade_in
+    )
+
+    return np.concatenate(
+        [
+            left[:-fade_samples],
+            overlap.astype(np.float32),
+            right[fade_samples:],
+        ]
+    )
+
+
+
 def split_text_for_sentence_pause(text):
     """Split text at sentence-ending punctuation for fixed pause insertion."""
     # Chinese punctuation can be adjacent to the next sentence; English punctuation
@@ -450,6 +553,9 @@ def infer(
     mixed_zh_en_mode=True,
     chinese_pace_mode=True,
     chinese_speed_ratio=0.85,
+    dual_language_reference=False,
+    english_ref_audio_orig=None,
+    english_ref_text="",
     nfe_step=32,
     speed=1,
     show_info=gr.Info,
@@ -504,6 +610,23 @@ def infer(
 
     ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_orig, ref_text, show_info=show_info)
 
+    english_ref_audio = None
+    english_ref_text_processed = english_ref_text or ""
+
+    # 雙參考模式：只有在使用者有提供英文參考音訊時啟用。
+    dual_ref_ready = bool(dual_language_reference and english_ref_audio_orig)
+
+    if dual_language_reference and _has_english(gen_text) and not english_ref_audio_orig:
+        gr.Warning("已開啟中英雙參考，但尚未提供英文參考音訊；本次會改用主要參考音訊生成英文。")
+
+    if dual_ref_ready:
+        english_ref_audio, english_ref_text_processed = preprocess_ref_audio_text(
+            english_ref_audio_orig,
+            english_ref_text or "",
+            show_info=show_info,
+        )
+        show_info("中英雙參考已啟用：中文使用主要參考，英文使用英文參考。")
+
     if model == DEFAULT_TTS_MODEL:
         ema_model = F5TTS_ema_model
     elif model == "E2-TTS":
@@ -521,9 +644,114 @@ def infer(
             pre_custom_path = model[1]
         ema_model = custom_ema_model
 
-    # 中英混合時優先讓 F5-TTS 官方 chunk inference 整體處理，
-    # 避免逐句重啟生成造成中文不連貫，並降低英文片段被吞掉的機率。
-    if sentence_pause > 0 and not mixed_detected:
+    # --------------------------------------------------------
+    # 中英雙參考模式
+    # --------------------------------------------------------
+    if dual_ref_ready and _has_english(gen_text):
+        # 純英文：整段直接使用英文參考。
+        if _has_english(gen_text) and not _has_chinese(gen_text):
+            show_info("偵測到純英文文字：本次使用英文參考音訊。")
+            final_wave, final_sample_rate, combined_spectrogram = infer_process(
+                english_ref_audio,
+                english_ref_text_processed,
+                gen_text,
+                ema_model,
+                vocoder,
+                cross_fade_duration=cross_fade_duration,
+                nfe_step=nfe_step,
+                speed=float(speed),
+                show_info=show_info,
+                progress=gr.Progress(),
+            )
+
+        # 中英混合：依語言片段切換參考音訊。
+        elif _is_mixed_zh_en(gen_text):
+            language_segments = split_mixed_zh_en_by_language(gen_text)
+
+            show_info(
+                f"中英雙參考：共辨識 {len(language_segments)} 個語言片段，"
+                "中文使用主要參考、英文使用英文參考。"
+            )
+
+            final_wave = None
+            final_sample_rate = None
+            generated_specs = []
+
+            for seg_index, (seg_lang, seg_text) in enumerate(language_segments, start=1):
+                if not seg_text.strip():
+                    continue
+
+                if seg_lang == "en":
+                    seg_ref_audio = english_ref_audio
+                    seg_ref_text = english_ref_text_processed
+                    seg_speed = float(speed)
+                    lang_label = "英文"
+                else:
+                    seg_ref_audio = ref_audio
+                    seg_ref_text = ref_text
+                    seg_speed = effective_speed
+                    lang_label = "中文"
+
+                show_info(
+                    f"正在生成第 {seg_index}/{len(language_segments)} 段（{lang_label}）"
+                )
+
+                seg_wave, seg_sr, seg_spec = infer_process(
+                    seg_ref_audio,
+                    seg_ref_text,
+                    seg_text,
+                    ema_model,
+                    vocoder,
+                    cross_fade_duration=cross_fade_duration,
+                    nfe_step=nfe_step,
+                    speed=seg_speed,
+                    show_info=show_info,
+                    progress=None,
+                )
+
+                if seg_wave is None:
+                    continue
+
+                if final_sample_rate is None:
+                    final_sample_rate = seg_sr
+
+                final_wave = _dual_ref_crossfade_concat(
+                    final_wave,
+                    seg_wave,
+                    seg_sr,
+                    seconds=0.03,
+                )
+
+                if seg_spec is not None:
+                    generated_specs.append(seg_spec)
+
+            if final_wave is None or final_sample_rate is None:
+                gr.Warning("中英雙參考模式沒有成功產生語音。")
+                return gr.update(), gr.update(), ref_text, used_seed
+
+            combined_spectrogram = (
+                np.concatenate(generated_specs, axis=1)
+                if generated_specs
+                else np.zeros((100, 1), dtype=np.float32)
+            )
+
+        # 有英文參考，但目前文字只有中文：照原本中文主要參考處理。
+        else:
+            final_wave, final_sample_rate, combined_spectrogram = infer_process(
+                ref_audio,
+                ref_text,
+                gen_text,
+                ema_model,
+                vocoder,
+                cross_fade_duration=cross_fade_duration,
+                nfe_step=nfe_step,
+                speed=effective_speed,
+                show_info=show_info,
+                progress=gr.Progress(),
+            )
+
+    # 中英混合時若沒有使用雙參考，仍沿用原本連續生成。
+    elif sentence_pause > 0 and not mixed_detected:
         sentence_parts = split_text_for_sentence_pause(gen_text)
         generated_waves = []
         generated_specs = []
@@ -2746,12 +2974,40 @@ with gr.Blocks() as app_tts:
         "① 從「音訊工作台」挑選段落後一鍵套用。  \n"
         "② 直接在本頁自行上傳參考音訊、輸入參考文字。  \n"
         "本頁自行選擇的內容會直接取代先前從工作台套用的內容。  \n\n"
-        "💡 **中文＋英文一起朗讀：**進階設定中的「中英混合朗讀優化」建議保持開啟。"
+        "💡 **中文＋英文一起朗讀：**可以啟用「中英雙參考音訊」，"
+        "讓中文使用中文參考、英文使用英文參考；兩個參考最好是同一位說話者。"
     )
     ref_audio_input = gr.Audio(
-        label="參考音訊（工作台套用／自行上傳皆可）",
+        label="中文／主要參考音訊（工作台套用／自行上傳皆可）",
         type="filepath",
     )
+
+    with gr.Accordion("🌐 中英雙參考音訊（中文＋英文時建議使用）", open=True):
+        dual_language_reference = gr.Checkbox(
+            label="啟用中英雙參考音訊",
+            value=False,
+            info="開啟後：中文片段使用上方主要參考音訊；英文片段使用下方英文參考音訊。兩段最好是同一個人的聲音。",
+        )
+        english_ref_audio_input = gr.Audio(
+            label="英文參考音訊",
+            type="filepath",
+        )
+        with gr.Row():
+            english_ref_text_input = gr.Textbox(
+                label="英文參考文字",
+                info="建議填入英文參考音訊實際說的內容；留空時會依原本 F5-TTS 流程自動辨識。",
+                lines=2,
+                scale=4,
+            )
+            english_ref_text_file = gr.File(
+                label="從文字檔載入英文參考文字（.txt）",
+                file_types=[".txt"],
+                scale=1,
+            )
+        gr.Markdown(
+            "💡 最佳效果：**中文參考與英文參考使用同一位說話者**。"
+            "生成時會自動辨識中文／英文片段並切換參考聲音。"
+        )
     with gr.Row():
         gen_text_input = gr.Textbox(
             label="要產生的文字",
@@ -2764,7 +3020,7 @@ with gr.Blocks() as app_tts:
     with gr.Accordion("進階設定", open=True) as adv_settn:
         with gr.Row():
             ref_text_input = gr.Textbox(
-                label="參考文字（工作台套用／自行輸入皆可）",
+                label="中文／主要參考文字（工作台套用／自行輸入皆可）",
                 info="留空時會自動辨識參考音訊內容；若自行輸入文字或上傳文字檔，將以您提供的文字為準。",
                 lines=2,
                 scale=4,
@@ -2900,6 +3156,9 @@ with gr.Blocks() as app_tts:
     def basic_tts(
         ref_audio_input,
         ref_text_input,
+        english_ref_audio_input,
+        english_ref_text_input,
+        dual_language_reference,
         gen_text_input,
         remove_silence,
         randomize_seed,
@@ -2929,6 +3188,9 @@ with gr.Blocks() as app_tts:
             mixed_zh_en_mode=mixed_zh_en_mode,
             chinese_pace_mode=chinese_pace_mode,
             chinese_speed_ratio=chinese_speed_ratio,
+            dual_language_reference=dual_language_reference,
+            english_ref_audio_orig=english_ref_audio_input,
+            english_ref_text=english_ref_text_input,
             nfe_step=nfe_slider,
             speed=speed_slider,
         )
@@ -2983,6 +3245,18 @@ with gr.Blocks() as app_tts:
         outputs=[ref_text_input],
     )
 
+    english_ref_text_file.upload(
+        load_text_from_file,
+        inputs=[english_ref_text_file],
+        outputs=[english_ref_text_input],
+    )
+
+    english_ref_audio_input.clear(
+        lambda: [None, None],
+        None,
+        [english_ref_text_input, english_ref_text_file],
+    )
+
     ref_audio_input.clear(
         lambda: [None, None],
         None,
@@ -3008,6 +3282,9 @@ with gr.Blocks() as app_tts:
         inputs=[
             ref_audio_input,
             ref_text_input,
+            english_ref_audio_input,
+            english_ref_text_input,
+            dual_language_reference,
             gen_text_input,
             remove_silence,
             randomize_seed,
